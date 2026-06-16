@@ -20,7 +20,7 @@ def get_international_odds():
         print("❌ 錯誤：找不到 ODDS_API_KEY！請檢查 GitHub 保險箱設定。")
         return None
 
-    # 📡 2026年6月焦點：世界盃分組賽黃金期
+    # 📡 2026年6月焦點：世界盃分組賽黃金期，優先鎖定世界盃
     SPORTS_TO_TRY = [
         'soccer_fifa_world_cup',       # 2026 世界盃
         'soccer_conmebol_copa_america',# 美洲盃
@@ -33,7 +33,7 @@ def get_international_odds():
         url = f"https://api.the-odds-api.com/v4/sports/{sport}/odds"
         params = {
             "apiKey": ODDS_API_KEY,
-            "regions": "eu",          # 抓取歐洲大莊家（如 Bet365, William Hill 等）
+            "regions": "eu",          # 抓取歐洲主流大莊家數據
             "markets": "h2h",
             "oddsFormat": "decimal",
             "dateFormat": "iso"
@@ -79,7 +79,7 @@ def get_international_odds():
     return None
 
 # =====================================================================
-# 3. 呼叫 最新 Gemini 3.5 Flash 大腦 (融入凱利指數與次選高賠策略)
+# 3. 呼叫 最新 Gemini 3.5 Flash 大腦 (固定短網址版，融入凱利指數與次選高賠策略)
 # =====================================================================
 def generate_report_with_gemini(match_info):
     if not match_info:
@@ -91,12 +91,11 @@ def generate_report_with_gemini(match_info):
         print("❌ 錯誤：找不到 GEMINI_API_KEY！")
         return None
 
-    # 超短固定網址，100% 杜絕折行錯誤
+    # 🛠️ 終極防錯：網址保持絕對固定同超短，完全不放變數，金鑰改放在 params 參數傳送
     url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent"
     query_params = {"key": GEMINI_API_KEY}
     headers = {"Content-Type": "application/json"}
     
-    # 整理數據給 AI 運算
     main_bk = match_info['main_odds']
     bk_json = json.dumps(match_info['all_bookmakers'], ensure_ascii=False)
 
@@ -112,10 +111,10 @@ def generate_report_with_gemini(match_info):
 {bk_json}
 
 ⚠️ 【核心策略指令】：
-1. 必須在分析中展現「凱利指數分析」，對比各莊家賠率與市場平均勝率，指出哪一個選項（主/平/客）的凱利指數異常偏低，代表莊家在低調控賠，具職工防範風險。
+1. 必須在分析中展現「凱利指數分析」，對比各莊家賠率與市場平均勝率，指出哪一個選項（主/平/客）的凱利指數異常偏低，代表莊家在低調控賠，具備防範風險價值。
 2. 精準鎖定【次選均衡高賠組合】：如果不想觸碰極端大冷，請在「和局（冷平）」或「受讓客勝（冷客）」中，找出冷門程度適中、市場拉力均衡、相對更容易打出的第二高賠選項，並將其列為重點推薦！
 3. 如果球隊名是英文，請在分析時自動將其翻譯為香港球迷最熟悉的中文譯名（例如：Netherlands -> 荷蘭，Japan -> 日本）。
-4. 必須嚴格按照以下「8大板塊」的順序輸出，每板塊加上清晰的 Emoji 標題，文字精煉吸睛：
+4. 必須嚴格按照以下「8大板塊」的順序輸出，每板塊加上清晰的 Emoji 標題，文字精煉吸睛，適合 Telegram 閱讀：
 
 1. 預計首發陣容及戰術對決
 2. 傷停情況與即時戰意背景
@@ -137,4 +136,45 @@ def generate_report_with_gemini(match_info):
     try:
         response = requests.post(url, headers=headers, params=query_params, json=payload, timeout=30)
         if response.status_code == 200:
-            return response.json()
+            return response.json()['candidates'][0]['content']['parts'][0]['text']
+        else:
+            print(f"❌ Gemini API 錯誤：{response.text}")
+    except Exception as e:
+        print(f"❌ 呼叫 Gemini 發生錯誤：{e}")
+    return None
+
+# =====================================================================
+# 4. 外賣仔出 Post
+# =====================================================================
+def send_to_telegram(text):
+    if not text:
+        return
+    if not BOT_TOKEN or not CHANNEL_ID:
+        print("❌ 錯誤：找不到 BOT_TOKEN 或 CHANNEL_ID，停止發送。")
+        return
+        
+    print("🚀 正在將包含凱利指數的最新預測發送到 Telegram...")
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    
+    # 支援數值型（如 -100xxx）或字串型（如 @xxx）的 CHANNEL_ID
+    payload = {"chat_id": CHANNEL_ID, "text": text, "parse_mode": "Markdown"}
+    
+    try:
+        res = requests.post(url, json=payload, timeout=15)
+        if res.status_code == 200:
+            print("🎉【凱利次選高賠全自動完成！】預測已成功出 Post！")
+        else:
+            print(f"❌ Telegram 發送失敗：{res.text}")
+    except Exception as e:
+        print(f"❌ Telegram 連線失敗：{e}")
+
+# =====================================================================
+# 5. 主程式執行
+# =====================================================================
+if __name__ == "__main__":
+    data = get_international_odds()
+    if data:
+        report = generate_report_with_gemini(data)
+        send_to_telegram(report)
+    else:
+        print("⏸️ 今日雷達找不到真實賽事。為保證準確，今日提早收工不出 Post。")
